@@ -767,7 +767,6 @@ body::before {
         </div>
 
         <div style="font-size:9px;color:var(--grey2);letter-spacing:2px;text-align:center;padding:8px">Export & Import available in ⚙ Settings</div>
-        <input type="file" id="importInput" accept=".json" onchange="importData(event)">
       </div>
     </div>
 
@@ -955,6 +954,33 @@ body::before {
   </div>
 </div>
 
+<!-- EARLY STOP MODAL -->
+<div class="modal-overlay" id="earlyStopModal">
+  <div class="modal" style="max-width:420px;border-top-color:var(--orange)">
+    <div class="modal-title" style="color:var(--orange)">SESSION STOPPED</div>
+    <div class="modal-sub" id="earlyStopSub">You stopped early. Log your work.</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--orange);padding:12px 14px;margin-bottom:16px;display:flex;gap:20px">
+      <div style="text-align:center;flex:1">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--orange)" id="earlyTimeWorked">00:00</div>
+        <div style="font-size:8px;letter-spacing:2px;color:var(--grey2);text-transform:uppercase">time worked</div>
+      </div>
+      <div style="text-align:center;flex:1">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--grey2)" id="earlyTimeLeft">00:00</div>
+        <div style="font-size:8px;letter-spacing:2px;color:var(--grey2);text-transform:uppercase">time remaining</div>
+      </div>
+    </div>
+    <div class="form-field">
+      <label class="form-label">What did you complete?</label>
+      <textarea class="form-textarea" id="earlyStopLog" placeholder="e.g. Finished reading Hindu editorial, solved 10 questions..."></textarea>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+      <button class="modal-submit" style="background:var(--green);color:#000" onclick="earlyStopSaveBreak()">✓ SAVE & TAKE BREAK</button>
+      <button class="modal-submit" onclick="earlyStopSaveNoBreak()">✓ SAVE & START NEW SESSION</button>
+      <button class="modal-cancel" style="text-align:center" onclick="earlyStopDiscard()">✕ DISCARD & STOP</button>
+    </div>
+  </div>
+</div>
+
 <!-- BREAK MODAL -->
 <div class="modal-overlay" id="breakModal">
   <div class="modal break-modal">
@@ -1083,6 +1109,29 @@ body::before {
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">Random Focus Nudges</div>
+      <div style="font-size:9px;color:var(--grey2);margin-bottom:10px;line-height:1.7">
+        Spoken at 2 random points during each session — once before half time, once after.<br>
+        Keeps you from zoning out in long sessions.
+      </div>
+      <div class="form-field">
+        <label class="form-label">Enable Nudges</label>
+        <select class="form-select" id="nudgeEnabled">
+          <option value="true">✓ Enabled</option>
+          <option value="false">✕ Disabled</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Nudge Message 1 (before half time)</label>
+        <input class="form-input" id="nudgeMsg1" value="Stay locked in. Keep grinding.">
+      </div>
+      <div class="form-field">
+        <label class="form-label">Nudge Message 2 (after half time)</label>
+        <input class="form-input" id="nudgeMsg2" value="Almost there. Don't stop now. Finish strong.">
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">User Profile</div>
       <div class="form-field">
         <label class="form-label">Your Name</label>
@@ -1129,6 +1178,8 @@ body::before {
   </div>
 </div>
 
+
+
 <!-- EXIT CONFIRM MODAL -->
 <div class="modal-overlay" id="exitModal">
   <div class="modal" style="max-width:400px;border-top-color:var(--orange)">
@@ -1172,7 +1223,10 @@ const STATE = {
     msgBreak: 'Break time. Step away. No phone. No social media.',
     msgBreakEnd: 'Break over. Get back to work. Now.',
     userName: '',
-    userGoal: ''
+    userGoal: '',
+    nudgeEnabled: true,
+    nudgeMsg1: 'Stay locked in. Keep grinding.',
+    nudgeMsg2: 'Almost there. Don\'t stop now. Finish strong.'
   },
   streakData: {},  // { 'YYYY-MM-DD': pomCount }
 };
@@ -1198,6 +1252,11 @@ let uptime = {
   secs: 0,
 };
 
+// Random nudge — fires once between 0-50% and once between 50-100% of session
+let nudge = { firstFired: false, secondFired: false, firstAt: 0, secondAt: 0 };
+
+// Random nudge — fires once between 0-50% and once between 50-100% of session
+
 const CIRC = 2 * Math.PI * 108; // ring circumference
 
 // ─── PERSISTENCE ────────────────────────────────────────────────────────────
@@ -1220,6 +1279,9 @@ function load() {
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
+  // Ensure uptime banner is hidden on load
+  const ub = document.getElementById('uptimeBanner');
+  if (ub) ub.style.display = 'none';
   load();
   renderSubjects();
   renderTasks();
@@ -1275,6 +1337,12 @@ function startPomodoro() {
   timer.remainSecs = getFocusSecs();
   timer.halfFired = false;
   timer.endFired = false;
+  // Init random nudge fire times
+  const focusSecs = getFocusSecs();
+  nudge.firstFired = false;
+  nudge.secondFired = false;
+  nudge.firstAt = Math.floor(Math.random() * focusSecs * 0.45) + 30;
+  nudge.secondAt = Math.floor(focusSecs * 0.55 + Math.random() * focusSecs * 0.35);
   timer.running = true;
   timer.paused = false;
 
@@ -1309,11 +1377,85 @@ function resumePomodoro() {
 }
 
 function stopPomodoro() {
-  timer.running = false;
-  timer.paused = false;
-  stopWorker();
+  if (!timer.running && !timer.paused) return;
+  if (timer.phase !== 'work') {
+    // Stopping during break — clean stop
+    timer.running = false;
+    timer.paused = false;
+    stopWorker();
+    resetTimerUI();
+    speechSynthesis.cancel();
+    return;
+  }
+  // Stopping during work — show early stop modal
+  timer.paused = true;
+  const workedSecs = timer.totalSecs - timer.remainSecs;
+  const leftSecs = timer.remainSecs;
+  const wm = Math.floor(workedSecs/60).toString().padStart(2,'0');
+  const ws = (workedSecs%60).toString().padStart(2,'0');
+  const lm = Math.floor(leftSecs/60).toString().padStart(2,'0');
+  const ls = (leftSecs%60).toString().padStart(2,'0');
+  document.getElementById('earlyTimeWorked').textContent = wm + ':' + ws;
+  document.getElementById('earlyTimeLeft').textContent = lm + ':' + ls;
+  document.getElementById('earlyStopSub').textContent =
+    'You worked ' + wm + ':' + ws + ' of ' + Math.floor(timer.totalSecs/60) + ' min. Log it.';
+  document.getElementById('earlyStopLog').value = '';
+  openModal('earlyStopModal');
+}
+
+function earlyStopSaveBreak() {
+  const workedSecs = Math.max(1, timer.totalSecs - timer.remainSecs);
+  const log = document.getElementById('earlyStopLog').value.trim();
+  const today = getToday();
+  STATE.sessions.push({
+    date: today, type: 'work', taskId: timer.activeTaskId,
+    duration: workedSecs, log: log || '[Early stop]',
+    timestamp: Date.now(), early: true
+  });
+  STATE.streakData[today] = (STATE.streakData[today] || 0) + 1;
+  save();
+  timer.pomCount++;
+  updatePomDots();
+  closeModal('earlyStopModal');
+  timer.running = false; timer.paused = false;
+  stopWorker(); speechSynthesis.cancel();
+  updateSessionStats(); renderMiniLog(); renderFullLog();
+  // Open break modal
+  const isLong = timer.pomCount % getLongBreakAfter() === 0;
+  document.getElementById('breakModalSub').textContent = isLong ? 'Long break. You earned it.' : 'Short break time.';
+  document.getElementById('sessionLogInput').value = log;
+  startUptimeTracker();
+  openModal('breakModal');
+  showNotif('Session saved. Break time.', 'ok');
+}
+
+function earlyStopSaveNoBreak() {
+  const workedSecs = Math.max(1, timer.totalSecs - timer.remainSecs);
+  const log = document.getElementById('earlyStopLog').value.trim();
+  const today = getToday();
+  STATE.sessions.push({
+    date: today, type: 'work', taskId: timer.activeTaskId,
+    duration: workedSecs, log: log || '[Early stop]',
+    timestamp: Date.now(), early: true
+  });
+  STATE.streakData[today] = (STATE.streakData[today] || 0) + 1;
+  save();
+  timer.pomCount++;
+  updatePomDots();
+  closeModal('earlyStopModal');
+  timer.running = false; timer.paused = false;
+  stopWorker(); speechSynthesis.cancel();
   resetTimerUI();
-  speechSynthesis.cancel();
+  updateSessionStats(); renderMiniLog(); renderFullLog();
+  showNotif('Session saved. Start a new one.', 'ok');
+}
+
+function earlyStopDiscard() {
+  closeModal('earlyStopModal');
+  timer.running = false; timer.paused = false;
+  stopWorker(); speechSynthesis.cancel();
+  resetTimerUI();
+  showNotif('Session discarded.', 'warn');
 }
 
 function skipPhase() {
@@ -1365,6 +1507,21 @@ function onTick() {
       timer.halfFired = true;
       speak(STATE.settings.msgHalf);
       showNotif('Half time. Stay locked in.', 'warn');
+    }
+  }
+
+
+  // Random nudge — first before half, second after half
+  if (timer.phase === 'work' && STATE.settings.nudgeEnabled) {
+    const elapsed = timer.totalSecs - timer.remainSecs;
+    const half = Math.floor(timer.totalSecs / 2);
+    if (!nudge.firstFired && elapsed >= nudge.firstAt && elapsed < half) {
+      nudge.firstFired = true;
+      speak(STATE.settings.nudgeMsg1 || 'Stay locked in. Keep grinding.');
+    }
+    if (!nudge.secondFired && elapsed >= nudge.secondAt && elapsed >= half) {
+      nudge.secondFired = true;
+      speak(STATE.settings.nudgeMsg2 || 'Almost there. Don\'t stop now. Finish strong.');
     }
   }
 
@@ -1990,6 +2147,9 @@ function loadSettingsToForm() {
   document.getElementById('msgBreakEnd').value = STATE.settings.msgBreakEnd;
   document.getElementById('userName').value = STATE.settings.userName || '';
   document.getElementById('userGoal').value = STATE.settings.userGoal || '';
+  document.getElementById('nudgeEnabled').value = STATE.settings.nudgeEnabled !== false ? 'true' : 'false';
+  document.getElementById('nudgeMsg1').value = STATE.settings.nudgeMsg1 || 'Stay locked in. Keep grinding.';
+  document.getElementById('nudgeMsg2').value = STATE.settings.nudgeMsg2 || 'Almost there. Dont stop now. Finish strong.';
   // Populate browser voices
   populateBrowserVoices();
 }
@@ -2027,8 +2187,14 @@ function saveSettings() {
   STATE.settings.msgEnd = document.getElementById('msgEnd').value;
   STATE.settings.msgBreak = document.getElementById('msgBreak').value;
   STATE.settings.msgBreakEnd = document.getElementById('msgBreakEnd').value;
+  STATE.settings.nudgeEnabled = document.getElementById('nudgeEnabled').value === 'true';
+  STATE.settings.nudgeMsg1 = document.getElementById('nudgeMsg1').value.trim() || 'Stay locked in. Keep grinding.';
+  STATE.settings.nudgeMsg2 = document.getElementById('nudgeMsg2').value.trim() || 'Almost there. Dont stop now. Finish strong.';
   STATE.settings.userName = document.getElementById('userName').value.trim();
   STATE.settings.userGoal = document.getElementById('userGoal').value.trim();
+  STATE.settings.nudgeEnabled = document.getElementById('nudgeEnabled').value === 'true';
+  STATE.settings.nudgeMsg1 = document.getElementById('nudgeMsg1').value;
+  STATE.settings.nudgeMsg2 = document.getElementById('nudgeMsg2').value;
   save();
   closeModal('settingsModal');
   updateBadgeTTS();
@@ -2109,8 +2275,14 @@ function exportAPIConfig() {
     msgEnd: STATE.settings.msgEnd,
     msgBreak: STATE.settings.msgBreak,
     msgBreakEnd: STATE.settings.msgBreakEnd,
+    nudgeEnabled: STATE.settings.nudgeEnabled,
+    nudgeMsg1: STATE.settings.nudgeMsg1,
+    nudgeMsg2: STATE.settings.nudgeMsg2,
     userName: STATE.settings.userName,
-    userGoal: STATE.settings.userGoal
+    userGoal: STATE.settings.userGoal,
+    nudgeEnabled: STATE.settings.nudgeEnabled,
+    nudgeMsg1: STATE.settings.nudgeMsg1,
+    nudgeMsg2: STATE.settings.nudgeMsg2
   };
   const blob = new Blob([JSON.stringify(config, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2146,6 +2318,9 @@ function importAPIConfig(e) {
       if (src.msgEnd       !== undefined) STATE.settings.msgEnd       = src.msgEnd;
       if (src.msgBreak     !== undefined) STATE.settings.msgBreak     = src.msgBreak;
       if (src.msgBreakEnd  !== undefined) STATE.settings.msgBreakEnd  = src.msgBreakEnd;
+      if (src.nudgeEnabled !== undefined) STATE.settings.nudgeEnabled = src.nudgeEnabled;
+      if (src.nudgeMsg1    !== undefined) STATE.settings.nudgeMsg1    = src.nudgeMsg1;
+      if (src.nudgeMsg2    !== undefined) STATE.settings.nudgeMsg2    = src.nudgeMsg2;
       if (src.userName     !== undefined) STATE.settings.userName     = src.userName;
       if (src.userGoal     !== undefined) STATE.settings.userGoal     = src.userGoal;
 
@@ -2163,6 +2338,9 @@ function importAPIConfig(e) {
       document.getElementById('msgEnd').value           = STATE.settings.msgEnd || '';
       document.getElementById('msgBreak').value         = STATE.settings.msgBreak || '';
       document.getElementById('msgBreakEnd').value      = STATE.settings.msgBreakEnd || '';
+      document.getElementById('nudgeEnabled').value     = STATE.settings.nudgeEnabled === false ? 'false' : 'true';
+      document.getElementById('nudgeMsg1').value        = STATE.settings.nudgeMsg1 || 'Stay locked in. Keep grinding.';
+      document.getElementById('nudgeMsg2').value        = STATE.settings.nudgeMsg2 || "Almost there. Dont stop now. Finish strong.";
       document.getElementById('userName').value         = STATE.settings.userName || '';
       document.getElementById('userGoal').value         = STATE.settings.userGoal || '';
       onEngineChange();
@@ -2249,18 +2427,35 @@ function importData(e) {
 
 function clearTodayLog() {
   const today = getToday();
+  const todayCount = STATE.sessions.filter(s => s.date === today).length;
+  if (todayCount === 0) { showNotif('Nothing to clear today.', 'warn'); return; }
+  if (!confirm('Clear all ' + todayCount + ' session(s) from today? This cannot be undone.')) return;
+
   STATE.sessions = STATE.sessions.filter(s => s.date !== today);
   delete STATE.streakData[today];
+
+  // Reset pom counter and task pom logs for today
+  timer.pomCount = 0;
+  updatePomDots();
+  STATE.tasks.forEach(t => { t.pomsLogged = 0; });
+
   save();
   renderFullLog();
   renderMiniLog();
+  renderTasks();
   updateSessionStats();
+  buildHeatmap();
+  buildWeekChart();
   showNotif('Today\'s log cleared.', 'warn');
 }
 
 // ─── MODALS ──────────────────────────────────────────────────────────────────
 function openModal(id) { document.getElementById(id).classList.add('active'); }
-function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+  // If closing breakModal without going through startBreak/skipBreak, stop uptime
+  if (id === 'breakModal') stopUptimeTracker();
+}
 
 function openAddTask() {
   renderSubjects(); // refresh select
@@ -2503,7 +2698,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 <div class="task-lbl" id="taskLabel">—</div>
 <div class="idle-msg" id="idleMsg">start timer in main window</div>
-<script>
+\x3cscript>
 const CIRC = 848.2;
 function applyState(s) {
   if (!s) return;
