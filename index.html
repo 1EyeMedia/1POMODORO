@@ -579,7 +579,7 @@ body::before {
 .notif {
   position:fixed;
   bottom:24px;
-  right:24px;
+  right:-400px;
   background:var(--dark);
   border:1px solid var(--border);
   border-left:3px solid var(--green);
@@ -588,11 +588,10 @@ body::before {
   color:var(--white);
   letter-spacing:1px;
   z-index:999;
-  transform:translateX(120%);
-  transition:transform 0.3s;
+  transition:right 0.3s;
   max-width:280px;
 }
-.notif.show { transform:translateX(0); }
+.notif.show { right:24px; }
 .notif.warn { border-left-color:var(--orange); }
 .notif.err { border-left-color:var(--red); }
 
@@ -1169,6 +1168,7 @@ body::before {
         </label>
       </div>
       <button class="exp-btn" onclick="clearTodayLog()" style="width:100%;margin-top:8px;border-color:var(--red);color:var(--red);padding:10px">✕ Clear Today's Log</button>
+      <button class="exp-btn" onclick="resetAllData()" style="width:100%;margin-top:8px;border-color:#550000;color:#550000;padding:10px">☠ RESET ALL DATA</button>
     </div>
 
     <div class="modal-btns">
@@ -1197,6 +1197,18 @@ body::before {
       <button class="modal-submit" style="background:var(--green);color:#000" onclick="exportAndClose()">↓ EXPORT DATA & CLOSE</button>
       <button class="modal-submit" onclick="justClose()" style="background:var(--grey)">CLOSE WITHOUT EXPORTING</button>
       <button class="modal-cancel" style="text-align:center" onclick="closeModal('exitModal')">↩ GO BACK</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:380px;border-top-color:var(--red)">
+    <div class="modal-title" style="color:var(--red)">CONFIRM</div>
+    <div class="modal-sub" id="confirmMsg">Are you sure?</div>
+    <div style="display:flex;gap:8px;margin-top:20px">
+      <button class="modal-submit" style="background:var(--red)" id="confirmYesBtn">YES, DO IT</button>
+      <button class="modal-cancel" style="flex:1;text-align:center" onclick="closeModal('confirmModal')">CANCEL</button>
     </div>
   </div>
 </div>
@@ -1866,7 +1878,8 @@ function updateSessionStats() {
   const todaySessions = STATE.sessions.filter(s => s.date === today);
   const todayPoms = todaySessions.filter(s => s.type === 'work').length;
   const todayFocusMin = Math.round(todaySessions.filter(s => s.type === 'work').reduce((a, s) => a + s.duration, 0) / 60);
-  const tasksDone = STATE.tasks.filter(t => t.done).length;
+  const todayTaskIds = new Set(todaySessions.map(s => s.taskId).filter(Boolean));
+  const tasksDone = STATE.tasks.filter(t => t.done && todayTaskIds.has(t.id)).length;
   const goal = getDailyGoal();
 
   document.getElementById('ssPoms').textContent = todayPoms;
@@ -1878,7 +1891,8 @@ function updateSessionStats() {
 function updateAnalyticsStats() {
   const allPoms = STATE.sessions.filter(s => s.type === 'work').length;
   const allFocusSecs = STATE.sessions.filter(s => s.type === 'work').reduce((a, s) => a + s.duration, 0);
-  const tasksDone = STATE.tasks.filter(t => t.done).length;
+  const todayTaskIdsA = new Set(todaySessions.map(s => s.taskId).filter(Boolean));
+  const tasksDone = STATE.tasks.filter(t => t.done && todayTaskIdsA.has(t.id)).length;
   const streak = calcStreak();
   const today = getToday();
   const todayPoms = STATE.sessions.filter(s => s.date === today && s.type === 'work').length;
@@ -2377,7 +2391,7 @@ function exportData() {
     stats: {
       totalPomodoros: STATE.sessions.filter(s => s.type === 'work').length,
       totalFocusMins: Math.round(STATE.sessions.filter(s => s.type === 'work').reduce((a, s) => a + s.duration, 0) / 60),
-      tasksDone: STATE.tasks.filter(t => t.done).length,
+      tasksDone: STATE.tasks.filter(t => t.done && STATE.sessions.some(s => s.date === getToday() && s.taskId === t.id)).length,
       streak: calcStreak()
     },
     subjects: STATE.subjects,
@@ -2429,24 +2443,39 @@ function clearTodayLog() {
   const today = getToday();
   const todayCount = STATE.sessions.filter(s => s.date === today).length;
   if (todayCount === 0) { showNotif('Nothing to clear today.', 'warn'); return; }
-  if (!confirm('Clear all ' + todayCount + ' session(s) from today? This cannot be undone.')) return;
+  showConfirm('Clear all ' + todayCount + ' session(s) from today? Cannot be undone.', () => {
+    STATE.sessions = STATE.sessions.filter(s => s.date !== today);
+    delete STATE.streakData[today];
+    timer.pomCount = 0;
+    updatePomDots();
+    STATE.tasks.forEach(t => { t.pomsLogged = 0; });
+    save();
+    renderFullLog(); renderMiniLog(); renderTasks();
+    updateSessionStats(); buildHeatmap(); buildWeekChart();
+    showNotif('Today\'s log cleared.', 'warn');
+  });
+}
 
-  STATE.sessions = STATE.sessions.filter(s => s.date !== today);
-  delete STATE.streakData[today];
-
-  // Reset pom counter and task pom logs for today
-  timer.pomCount = 0;
-  updatePomDots();
-  STATE.tasks.forEach(t => { t.pomsLogged = 0; });
-
-  save();
-  renderFullLog();
-  renderMiniLog();
-  renderTasks();
-  updateSessionStats();
-  buildHeatmap();
-  buildWeekChart();
-  showNotif('Today\'s log cleared.', 'warn');
+function resetAllData() {
+  showConfirm('RESET EVERYTHING? All tasks, sessions, subjects wiped. Cannot be undone.', () => {
+    localStorage.removeItem('1pomodoro_state');
+    localStorage.removeItem('1pomodoro_last_export');
+    STATE.tasks = [];
+    STATE.subjects = [];
+    STATE.sessions = [];
+    STATE.streakData = {};
+    timer.pomCount = 0;
+    timer.activeTaskId = null;
+    timer.running = false;
+    timer.paused = false;
+    stopWorker();
+    resetTimerUI();
+    updatePomDots();
+    renderSubjects(); renderTasks(); renderFullLog(); renderMiniLog();
+    updateSessionStats(); updateActiveTaskStrip();
+    buildHeatmap(); buildWeekChart(); buildSubjectChart();
+    showNotif('All data reset.', 'warn');
+  });
 }
 
 // ─── MODALS ──────────────────────────────────────────────────────────────────
@@ -2477,13 +2506,21 @@ function showNotif(msg, type) {
 // ─── UTILS ───────────────────────────────────────────────────────────────────
 function uid() { return Math.random().toString(36).substr(2, 9); }
 
+function showConfirm(msg, onYes) {
+  document.getElementById('confirmMsg').textContent = msg;
+  const btn = document.getElementById('confirmYesBtn');
+  btn.onclick = () => { closeModal('confirmModal'); onYes(); };
+  openModal('confirmModal');
+}
+
 // ── EXIT MODAL ────────────────────────────────────────────────────────────────
 function openExitModal() {
   const today = getToday();
   const todaySessions = STATE.sessions.filter(s => s.date === today);
   const todayPoms = todaySessions.filter(s => s.type === 'work').length;
   const todayMins = Math.round(todaySessions.filter(s => s.type === 'work').reduce((a, s) => a + s.duration, 0) / 60);
-  const tasksDone = STATE.tasks.filter(t => t.done).length;
+  const todayTaskIdsA = new Set(todaySessions.map(s => s.taskId).filter(Boolean));
+  const tasksDone = STATE.tasks.filter(t => t.done && todayTaskIdsA.has(t.id)).length;
   const streak = calcStreak();
 
   document.getElementById('exitSummary').innerHTML =
