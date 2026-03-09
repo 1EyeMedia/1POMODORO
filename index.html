@@ -2128,27 +2128,58 @@ function importAPIConfig(e) {
   reader.onload = (ev) => {
     try {
       const cfg = JSON.parse(ev.target.result);
-      if (cfg._type !== '1pomodoro_api_config') {
-        showNotif('Wrong file — use a 1pomodoro-api-config.json file.', 'err'); return;
-      }
-      // Apply to STATE
-      const fields = ['ttsEngine','elKey','elVoice','sarvamKey','sarvamSpeaker','browserVoice','msgStart','msgHalf','msgEnd','msgBreak','msgBreakEnd','userName','userGoal'];
-      fields.forEach(k => { if (cfg[k] !== undefined) STATE.settings[k] = cfg[k]; });
+
+      // Accept both api config file and full data export (which also has settings)
+      const src = cfg._type === '1pomodoro_api_config' ? cfg : cfg.settings ? cfg.settings : null;
+      if (!src) { showNotif('Invalid config file.', 'err'); return; }
+
+      // Directly assign every field — use empty string not undefined
+      if (src.ttsEngine    !== undefined) STATE.settings.ttsEngine    = src.ttsEngine;
+      if (src.elKey        !== undefined) STATE.settings.elKey        = src.elKey;
+      if (src.elVoice      !== undefined) STATE.settings.elVoice      = src.elVoice;
+      if (src.sarvamKey    !== undefined) STATE.settings.sarvamKey    = src.sarvamKey;
+      if (src.sarvamSpeaker!== undefined) STATE.settings.sarvamSpeaker= src.sarvamSpeaker;
+      if (src.browserVoice !== undefined) STATE.settings.browserVoice = src.browserVoice;
+      if (src.msgStart     !== undefined) STATE.settings.msgStart     = src.msgStart;
+      if (src.msgHalf      !== undefined) STATE.settings.msgHalf      = src.msgHalf;
+      if (src.msgEnd       !== undefined) STATE.settings.msgEnd       = src.msgEnd;
+      if (src.msgBreak     !== undefined) STATE.settings.msgBreak     = src.msgBreak;
+      if (src.msgBreakEnd  !== undefined) STATE.settings.msgBreakEnd  = src.msgBreakEnd;
+      if (src.userName     !== undefined) STATE.settings.userName     = src.userName;
+      if (src.userGoal     !== undefined) STATE.settings.userGoal     = src.userGoal;
+
+      // Persist to localStorage immediately
       save();
 
-      // Refresh form fields live
-      loadSettingsToForm();
+      // Force-update every form field directly (don't rely on loadSettingsToForm)
+      document.getElementById('ttsEngine').value        = STATE.settings.ttsEngine || 'browser';
+      document.getElementById('elKeyInput').value       = STATE.settings.elKey || '';
+      document.getElementById('elVoiceInput').value     = STATE.settings.elVoice || '';
+      document.getElementById('sarvamKeyInput').value   = STATE.settings.sarvamKey || '';
+      document.getElementById('sarvamSpeaker').value    = STATE.settings.sarvamSpeaker || 'shubh';
+      document.getElementById('msgStart').value         = STATE.settings.msgStart || '';
+      document.getElementById('msgHalf').value          = STATE.settings.msgHalf || '';
+      document.getElementById('msgEnd').value           = STATE.settings.msgEnd || '';
+      document.getElementById('msgBreak').value         = STATE.settings.msgBreak || '';
+      document.getElementById('msgBreakEnd').value      = STATE.settings.msgBreakEnd || '';
+      document.getElementById('userName').value         = STATE.settings.userName || '';
+      document.getElementById('userGoal').value         = STATE.settings.userGoal || '';
+      onEngineChange();
       updateBadgeTTS();
 
-      // Show status
+      // Show confirmation with masked key preview
+      const elPreview  = STATE.settings.elKey    ? STATE.settings.elKey.substring(0,8)    + '••••' : 'not set';
+      const sarvPreview= STATE.settings.sarvamKey? STATE.settings.sarvamKey.substring(0,8)+ '••••' : 'not set';
       const st = document.getElementById('apiConfigStatus');
       st.style.display = 'block';
       st.style.color = 'var(--green)';
-      st.textContent = '✓ Config loaded — engine: ' + (cfg.ttsEngine || 'browser').toUpperCase() + (cfg.elKey ? ' · EL key set' : '') + (cfg.sarvamKey ? ' · Sarvam key set' : '');
+      st.innerHTML = '✓ Loaded &nbsp;|&nbsp; Engine: <b>' + (STATE.settings.ttsEngine||'browser').toUpperCase() +
+        '</b> &nbsp;|&nbsp; EL: <b>' + elPreview +
+        '</b> &nbsp;|&nbsp; Sarvam: <b>' + sarvPreview + '</b>';
 
-      showNotif('API config loaded.', 'ok');
+      showNotif('API config loaded successfully.', 'ok');
     } catch(err) {
-      showNotif('Invalid config file.', 'err');
+      showNotif('Could not read file: ' + err.message, 'err');
     }
     e.target.value = '';
   };
