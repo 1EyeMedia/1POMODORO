@@ -1094,6 +1094,22 @@ body::before {
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">API Config — Save & Load</div>
+      <div style="font-size:9px;color:var(--grey2);margin-bottom:10px;line-height:1.7">
+        Save all your API keys, voice settings and messages to a file.<br>
+        Load it next time — no need to re-enter anything.
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="exp-btn" onclick="exportAPIConfig()" style="flex:1;padding:10px;border-color:var(--green);color:var(--green)">↓ Save API Config</button>
+        <label class="exp-btn" style="flex:1;padding:10px;text-align:center;cursor:pointer;border-color:var(--orange);color:var(--orange)">
+          ↑ Load API Config
+          <input type="file" id="apiConfigInput" accept=".json" onchange="importAPIConfig(event)" style="display:none">
+        </label>
+      </div>
+      <div id="apiConfigStatus" style="font-size:8px;color:var(--grey2);letter-spacing:1px;margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">Data Management</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="exp-btn" onclick="exportData()" style="flex:1;padding:10px">↓ Export Full Report</button>
@@ -2076,6 +2092,69 @@ function startKeepAlive() {
 }
 
 // ─── EXPORT / IMPORT ─────────────────────────────────────────────────────────
+// ── API CONFIG EXPORT / IMPORT ───────────────────────────────────────────────
+function exportAPIConfig() {
+  const config = {
+    _type: '1pomodoro_api_config',
+    _version: 1,
+    ttsEngine: STATE.settings.ttsEngine,
+    elKey: STATE.settings.elKey,
+    elVoice: STATE.settings.elVoice,
+    sarvamKey: STATE.settings.sarvamKey,
+    sarvamSpeaker: STATE.settings.sarvamSpeaker,
+    browserVoice: STATE.settings.browserVoice,
+    msgStart: STATE.settings.msgStart,
+    msgHalf: STATE.settings.msgHalf,
+    msgEnd: STATE.settings.msgEnd,
+    msgBreak: STATE.settings.msgBreak,
+    msgBreakEnd: STATE.settings.msgBreakEnd,
+    userName: STATE.settings.userName,
+    userGoal: STATE.settings.userGoal
+  };
+  const blob = new Blob([JSON.stringify(config, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '1pomodoro-api-config.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showNotif('API config saved.', 'ok');
+}
+
+function importAPIConfig(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const cfg = JSON.parse(ev.target.result);
+      if (cfg._type !== '1pomodoro_api_config') {
+        showNotif('Wrong file — use a 1pomodoro-api-config.json file.', 'err'); return;
+      }
+      // Apply to STATE
+      const fields = ['ttsEngine','elKey','elVoice','sarvamKey','sarvamSpeaker','browserVoice','msgStart','msgHalf','msgEnd','msgBreak','msgBreakEnd','userName','userGoal'];
+      fields.forEach(k => { if (cfg[k] !== undefined) STATE.settings[k] = cfg[k]; });
+      save();
+
+      // Refresh form fields live
+      loadSettingsToForm();
+      updateBadgeTTS();
+
+      // Show status
+      const st = document.getElementById('apiConfigStatus');
+      st.style.display = 'block';
+      st.style.color = 'var(--green)';
+      st.textContent = '✓ Config loaded — engine: ' + (cfg.ttsEngine || 'browser').toUpperCase() + (cfg.elKey ? ' · EL key set' : '') + (cfg.sarvamKey ? ' · Sarvam key set' : '');
+
+      showNotif('API config loaded.', 'ok');
+    } catch(err) {
+      showNotif('Invalid config file.', 'err');
+    }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
 function exportData() {
   const today = getToday();
   const todaySessions = STATE.sessions.filter(s => s.date === today);
