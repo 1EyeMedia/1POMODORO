@@ -2333,93 +2333,138 @@ function dismissUptime() {
 }
 
 // ── TIMER POPUP ──────────────────────────────────────────────────────────────
+let popupWin = null;
+let popupInterval = null;
+
 function openTimerPopup() {
+  if (popupWin && !popupWin.closed) { popupWin.focus(); return; }
+
   const pw = window.screen.availWidth;
   const ph = window.screen.availHeight;
-  const popup = window.open('', '1pomodoro_timer',
+  popupWin = window.open('', '1pomodoro_timer',
     'width=' + pw + ',height=' + ph + ',left=0,top=0,resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no');
-  if (!popup || popup.closed) {
-    alert('Popup blocked! Allow popups for this site in your browser address bar.'); return;
+
+  if (!popupWin || popupWin.closed) {
+    alert('Popup blocked! Allow popups for this site in browser address bar.'); return;
   }
 
-  function buildPopupHTML() {
-    const phase = timer.phase === 'work' ? 'FOCUS SESSION' : 'BREAK';
-    const secs = Math.max(0, timer.remainSecs);
-    const m = Math.floor(secs/60).toString().padStart(2,'0');
-    const s = (secs%60).toString().padStart(2,'0');
-    const task = STATE.tasks.find(t => t.id === timer.activeTaskId);
-    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>1POMODORO</title>' +
-      '<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Bebas+Neue&family=Share+Tech+Mono&display=swap" rel="stylesheet">' +
-      '<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#030303;color:#f0f0f0;font-family:"Share Tech Mono",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden}' +
-      'body::before{content:"";position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,26,26,0.018) 2px,rgba(255,26,26,0.018) 4px);pointer-events:none}' +
-      '.brand{font-family:"Black Han Sans",sans-serif;font-size:28px;color:#ff1a1a;text-shadow:2px 2px 0 #8b0000;letter-spacing:1px;margin-bottom:4px;text-align:center}' +
-      '.brand span{color:#f0f0f0;text-shadow:1px 1px 0 #555}' +
-      '.phase{font-size:10px;letter-spacing:5px;text-transform:uppercase;color:#444;margin-bottom:24px;text-align:center}' +
-      '.phase.work{color:#ff1a1a}.phase.brk{color:#00ff88}' +
-      '.ring-wrap{position:relative;width:300px;height:300px;margin-bottom:20px}' +
-      '.ring-wrap svg{position:absolute;inset:0;transform:rotate(-90deg)}' +
-      '.ring-bg{fill:none;stroke:#1a1a1a;stroke-width:6}' +
-      '.ring-fill{fill:none;stroke:#ff1a1a;stroke-width:6;stroke-linecap:round;transition:stroke-dashoffset 1s linear}' +
-      '.ring-fill.brk{stroke:#00ff88}' +
-      '.digits{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}' +
-      '.time{font-family:"Bebas Neue",sans-serif;font-size:96px;letter-spacing:2px;line-height:1}' +
-      '.time.warn{color:#ff8800}.time.danger{color:#ff1a1a;animation:pulse 0.5s infinite alternate}' +
-      '@keyframes pulse{from{opacity:1}to{opacity:0.4}}' +
-      '.sub{font-size:9px;letter-spacing:3px;color:#444;text-transform:uppercase;margin-top:6px}' +
-      '.task-name{font-size:12px;color:#2a2a2a;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;text-align:center;max-width:320px}' +
-      '.task-name.active{color:#666}' +
-      '.close-btn{position:fixed;bottom:24px;font-family:"Share Tech Mono",monospace;font-size:9px;letter-spacing:2px;text-transform:uppercase;background:transparent;border:1px solid #1a1a1a;color:#1a1a1a;padding:8px 20px;cursor:pointer;transition:all 0.2s}' +
-      '.close-btn:hover{border-color:#ff1a1a;color:#ff1a1a}' +
-      '</style></head><body>' +
-      '<div class="brand"><span>1</span>POMODORO</div>' +
-      '<div class="phase ' + (timer.phase === 'work' ? 'work' : 'brk') + '" id="popPhase">' + phase + '</div>' +
-      '<div class="ring-wrap"><svg viewBox="0 0 300 300" width="300" height="300">' +
-      '<circle class="ring-bg" cx="150" cy="150" r="135"/>' +
-      '<circle class="ring-fill ' + (timer.phase === 'work' ? 'work' : 'brk') + '" id="popRing" cx="150" cy="150" r="135" stroke-dasharray="848.2" stroke-dashoffset="0"/>' +
-      '</svg><div class="digits"><div class="time" id="popTime">' + m + ':' + s + '</div><div class="sub" id="popSub">' + (timer.running ? (timer.phase === 'work' ? 'FOCUS' : 'BREAK') : 'IDLE') + '</div></div></div>' +
-      '<div class="task-name' + (task ? ' active' : '') + '">' + (task ? task.name : 'no active task') + '</div>' +
-      '<button class="close-btn" onclick="window.close()">✕ CLOSE POPUP</button>' +
-      '<script>' +
-      'function tick(){' +
-      '  try{' +
-      '    const ps=window.opener&&window.opener.getPopupState?window.opener.getPopupState():null;' +
-      '    if(!ps)return;' +
-      '    const m=Math.floor(ps.secs/60).toString().padStart(2,"0");' +
-      '    const s=(ps.secs%60).toString().padStart(2,"0");' +
-      '    document.getElementById("popTime").textContent=m+":"+s;' +
-      '    const el=document.getElementById("popTime");' +
-      '    el.className="time";' +
-      '    if(ps.running){const r=ps.secs/ps.total;if(r<0.1)el.classList.add("danger");else if(r<0.25)el.classList.add("warn");}' +
-      '    const circ=2*Math.PI*135;' +
-      '    const off=circ*(1-(ps.secs/Math.max(1,ps.total)));' +
-      '    document.getElementById("popRing").style.strokeDashoffset=off;' +
-      '    document.getElementById("popSub").textContent=ps.running?(ps.phase==="work"?"FOCUS":"BREAK"):"IDLE";' +
-      '    document.getElementById("popPhase").textContent=ps.phase==="work"?"FOCUS SESSION":"BREAK";' +
-      '    document.getElementById("popPhase").className="phase "+(ps.phase==="work"?"work":"brk");' +
-      '    document.getElementById("popRing").className="ring-fill "+(ps.phase==="work"?"work":"brk");' +
-      '  }catch(e){}' +
-      '  requestAnimationFrame(tick);' +
-      '}' +
-      'try{if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen();}catch(e){}' +
-      'tick();' +
-      '<\/script></body></html>';
+  const popupHTML = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>1POMODORO</title>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Bebas+Neue&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030303;color:#f0f0f0;font-family:'Share Tech Mono',monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,26,26,0.018) 2px,rgba(255,26,26,0.018) 4px);pointer-events:none}
+.brand{font-family:'Black Han Sans',sans-serif;font-size:28px;color:#ff1a1a;text-shadow:2px 2px 0 #8b0000;letter-spacing:1px;margin-bottom:4px;text-align:center}
+.brand span{color:#f0f0f0;text-shadow:1px 1px 0 #555}
+.phase{font-size:10px;letter-spacing:5px;text-transform:uppercase;color:#444;margin-bottom:24px;text-align:center;transition:color 0.3s}
+.phase.work{color:#ff1a1a}.phase.brk{color:#00ff88}
+.ring-wrap{position:relative;width:300px;height:300px;margin-bottom:20px}
+.ring-wrap svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:#1a1a1a;stroke-width:6}
+.ring-fill{fill:none;stroke:#ff1a1a;stroke-width:6;stroke-linecap:round;transition:stroke 0.5s}
+.ring-fill.brk{stroke:#00ff88}
+.digits{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.time{font-family:'Bebas Neue',sans-serif;font-size:96px;letter-spacing:2px;line-height:1;transition:color 0.3s}
+.time.warn{color:#ff8800}.time.danger{color:#ff1a1a;animation:pulse 0.5s infinite alternate}
+@keyframes pulse{from{opacity:1}to{opacity:0.4}}
+.sub{font-size:9px;letter-spacing:3px;color:#444;text-transform:uppercase;margin-top:6px}
+.task-lbl{font-size:11px;color:#333;letter-spacing:2px;text-transform:uppercase;margin-top:8px;text-align:center;max-width:340px;padding:0 20px}
+.idle-msg{font-size:10px;color:#222;letter-spacing:3px;text-transform:uppercase;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="brand"><span>1</span>POMODORO</div>
+<div class="phase work" id="phase">FOCUS SESSION</div>
+<div class="ring-wrap">
+  <svg viewBox="0 0 300 300" width="300" height="300">
+    <circle class="ring-bg" cx="150" cy="150" r="135"/>
+    <circle class="ring-fill" id="ring" cx="150" cy="150" r="135"
+      stroke-dasharray="848.2" stroke-dashoffset="0"/>
+  </svg>
+  <div class="digits">
+    <div class="time" id="timeDisplay">--:--</div>
+    <div class="sub" id="subLabel">WAITING...</div>
+  </div>
+</div>
+<div class="task-lbl" id="taskLabel">—</div>
+<div class="idle-msg" id="idleMsg">start timer in main window</div>
+<script>
+const CIRC = 848.2;
+function applyState(s) {
+  if (!s) return;
+  const m = Math.floor(s.secs/60).toString().padStart(2,'0');
+  const sec = (s.secs%60).toString().padStart(2,'0');
+  document.getElementById('timeDisplay').textContent = m+':'+sec;
+  const el = document.getElementById('timeDisplay');
+  el.className = 'time';
+  if (s.running) {
+    const r = s.secs / Math.max(1, s.total);
+    if (r < 0.1) el.classList.add('danger');
+    else if (r < 0.25) el.classList.add('warn');
+    const off = CIRC * (1 - r);
+    document.getElementById('ring').style.strokeDashoffset = off;
   }
+  const phase = document.getElementById('phase');
+  phase.textContent = s.phase === 'work' ? 'FOCUS SESSION' : (s.phase === 'break' ? 'BREAK' : 'FOCUS SESSION');
+  phase.className = 'phase ' + (s.phase === 'work' ? 'work' : 'brk');
+  document.getElementById('ring').className = 'ring-fill ' + (s.phase === 'work' ? '' : 'brk');
+  document.getElementById('subLabel').textContent = s.paused ? 'PAUSED' : s.running ? (s.phase === 'work' ? 'FOCUS' : 'BREAK') : 'IDLE';
+  document.getElementById('taskLabel').textContent = s.taskName || '—';
+  document.getElementById('idleMsg').style.display = s.running ? 'none' : '';
+}
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.type === '1pom_state') applyState(e.data.state);
+});
+// Tell parent we're ready
+window.opener && window.opener.postMessage({type:'1pom_popup_ready'}, '*');
+try { document.documentElement.requestFullscreen(); } catch(e) {}
+<\/script>
+</body>
+</html>`;
 
-  popup.document.open();
-  popup.document.write(buildPopupHTML());
-  popup.document.close();
+  popupWin.document.open();
+  popupWin.document.write(popupHTML);
+  popupWin.document.close();
+
+  // Wait for popup to signal ready, then start pushing state
+  window.addEventListener('message', function onReady(e) {
+    if (e.data && e.data.type === '1pom_popup_ready') {
+      window.removeEventListener('message', onReady);
+      startPushingState();
+    }
+  });
+
+  // Fallback — start pushing after 800ms regardless
+  setTimeout(startPushingState, 800);
 }
 
-// Expose state to popup
-window.getPopupState = function() {
-  return {
-    secs: Math.max(0, timer.remainSecs),
-    total: timer.totalSecs,
-    running: timer.running,
-    phase: timer.phase,
-    paused: timer.paused
-  };
-};
+function startPushingState() {
+  if (popupInterval) clearInterval(popupInterval);
+  popupInterval = setInterval(() => {
+    if (!popupWin || popupWin.closed) {
+      clearInterval(popupInterval);
+      popupInterval = null;
+      popupWin = null;
+      return;
+    }
+    const task = STATE.tasks.find(t => t.id === timer.activeTaskId);
+    const state = {
+      secs: Math.max(0, timer.remainSecs),
+      total: Math.max(1, timer.totalSecs),
+      running: timer.running,
+      paused: timer.paused,
+      phase: timer.phase,
+      taskName: task ? task.name : null
+    };
+    try {
+      popupWin.postMessage({ type: '1pom_state', state }, '*');
+    } catch(e) {}
+  }, 500);
+}
 function getToday() { return new Date().toISOString().slice(0, 10); }
 
 // ── AUTO-EXPORT ON CLOSE ─────────────────────────────────────────────────────
