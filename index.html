@@ -1583,6 +1583,10 @@ function onWorkComplete(skipped) {
   openModal('breakModal');
 
   updateSessionStats();
+  updateAnalyticsStats();
+  buildHeatmap();
+  buildWeekChart();
+  buildSubjectChart();
   renderMiniLog();
   renderFullLog();
 }
@@ -1596,6 +1600,11 @@ function startBreak() {
   }
   renderFullLog();
   renderMiniLog();
+  updateSessionStats();
+  updateAnalyticsStats();
+  buildHeatmap();
+  buildWeekChart();
+  buildSubjectChart();
   stopUptimeTracker();
   closeModal('breakModal');
 
@@ -1891,11 +1900,12 @@ function updateSessionStats() {
 function updateAnalyticsStats() {
   const allPoms = STATE.sessions.filter(s => s.type === 'work').length;
   const allFocusSecs = STATE.sessions.filter(s => s.type === 'work').reduce((a, s) => a + s.duration, 0);
-  const todayTaskIdsA = new Set(todaySessions.map(s => s.taskId).filter(Boolean));
+  const today = getToday();
+  const todaySessionsLocal = STATE.sessions.filter(s => s.date === today);
+  const todayPoms = todaySessionsLocal.filter(s => s.type === 'work').length;
+  const todayTaskIdsA = new Set(todaySessionsLocal.map(s => s.taskId).filter(Boolean));
   const tasksDone = STATE.tasks.filter(t => t.done && todayTaskIdsA.has(t.id)).length;
   const streak = calcStreak();
-  const today = getToday();
-  const todayPoms = STATE.sessions.filter(s => s.date === today && s.type === 'work').length;
   const goal = getDailyGoal();
   const score = Math.min(100, Math.round((todayPoms / goal) * 100));
 
@@ -2394,6 +2404,7 @@ function exportData() {
       tasksDone: STATE.tasks.filter(t => t.done && STATE.sessions.some(s => s.date === getToday() && s.taskId === t.id)).length,
       streak: calcStreak()
     },
+    settings: STATE.settings,
     subjects: STATE.subjects,
     tasks: STATE.tasks,
     sessions: STATE.sessions,
@@ -2416,23 +2427,28 @@ function importData(e) {
   reader.onload = (ev) => {
     try {
       const data = JSON.parse(ev.target.result);
-      if (data.subjects) STATE.subjects = data.subjects;
-      if (data.tasks) STATE.tasks = data.tasks;
-      if (data.sessions) STATE.sessions = data.sessions;
-      if (data.streakData) STATE.streakData = data.streakData;
+      const hasData = data.tasks || data.sessions || data.subjects;
+      if (!hasData) { showNotif('Invalid file — no tasks/sessions found.', 'err'); e.target.value = ''; return; }
+      if (Array.isArray(data.subjects))  STATE.subjects  = data.subjects;
+      if (Array.isArray(data.tasks))     STATE.tasks     = data.tasks;
+      if (Array.isArray(data.sessions))  STATE.sessions  = data.sessions;
+      if (data.streakData && typeof data.streakData === 'object') STATE.streakData = data.streakData;
+      if (data.settings && typeof data.settings === 'object') {
+        Object.assign(STATE.settings, data.settings);
+        loadSettingsToForm();
+        onEngineChange();
+        updateBadgeTTS();
+      }
       save();
-      renderSubjects();
-      renderTasks();
-      renderFullLog();
-      renderMiniLog();
-      updateSessionStats();
-      buildHeatmap();
-      buildWeekChart();
-      buildSubjectChart();
-      updateAnalyticsStats();
-      showNotif('Data imported successfully.', 'ok');
+      renderSubjects(); renderTasks(); renderFullLog(); renderMiniLog();
+      updateSessionStats(); updateAnalyticsStats();
+      buildHeatmap(); buildWeekChart(); buildSubjectChart();
+      updatePomDots(); updateActiveTaskStrip();
+      const tc = STATE.tasks.length;
+      const sc = STATE.sessions.filter(s => s.type === 'work').length;
+      showNotif('Imported: ' + tc + ' tasks, ' + sc + ' sessions.', 'ok');
     } catch(err) {
-      showNotif('Invalid file.', 'err');
+      showNotif('Import failed: ' + err.message, 'err');
     }
     e.target.value = '';
   };
